@@ -1,5 +1,6 @@
 from channels.generic.websocket import AsyncWebsocketConsumer
 import json
+from django.db.models import Q
 
 class NotificationsConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -23,6 +24,16 @@ class NotificationsConsumer(AsyncWebsocketConsumer):
 
     async def notification_message(self, event):
         message = event['message']
+        notification_type = message['notification_type']
+
+        # Check user preferences before sending the notification
+        user_preferences = await database_sync_to_async(UserPreferences.objects.get)(user=self.user)
+        if notification_type == 'TASK_UPDATED' and not user_preferences.task_updated:
+            return
+        elif notification_type == 'TASK_ASSIGNED' and not user_preferences.task_assigned:
+            return
+        elif notification_type == 'TASK_COMPLETED' and not user_preferences.task_completed:
+            return
 
         # Send message to WebSocket
         await self.send(text_data=json.dumps({
