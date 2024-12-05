@@ -3,11 +3,16 @@
 import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
+import useWebSocket from '../../hooks/useWebSocket';
+
+const WEBSOCKET_URL = 'ws://localhost:8000/ws/notifications/';
 
 export default function LoginPage() {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  useWebSocket(WEBSOCKET_URL);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
