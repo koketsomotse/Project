@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import Link from 'next/link'
-import useWebSocket from '../../hooks/useWebSocket';
+import useWebSocket from '../../../hooks/useWebSocket';
 
 const WEBSOCKET_URL = 'ws://localhost:8000/ws/notifications/';
 
@@ -96,9 +96,9 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+              className="bg-black text-white py-2 px-4 rounded"
             >
-              {loading ? 'Creating account...' : 'Create account'}
+              {loading ? 'Creating account...' : 'Register'}
             </button>
           </div>
 
