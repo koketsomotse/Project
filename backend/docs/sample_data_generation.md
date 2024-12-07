@@ -25,6 +25,24 @@ This document outlines the steps taken to generate sample data for the Real-Time
      - **Timestamps**: Each notification now includes a timestamp indicating when it was created and last updated. The `created_at` timestamp is randomized within the last 30 days, and the `updated_at` timestamp is set to the same value as `created_at`.
    - The command also created user preferences for each user, indicating their notification settings.
 
+## How to Generate Sample Data
+
+To generate sample data for testing purposes, follow these steps:
+
+1. **Navigate to the Backend Directory**:
+   - Open your terminal and navigate to the backend directory of the project.
+
+2. **Run the Management Command**:
+   - Execute the following command to generate sample data:
+     ```bash
+     python manage.py generate_sample_data
+     ```
+   - This command will create sample users and notifications as defined in the `generate_sample_data.py` script.
+
+3. **Verify Data Generation**:
+   - Check the database to ensure that the sample data has been created successfully.
+   - Use Django's admin interface or a database client to view the data.
+
 ## Expected Outcomes
 
 - **Users Created**: 5 unique users with the following sample credentials:

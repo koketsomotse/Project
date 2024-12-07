@@ -1,12 +1,6 @@
-import NotificationPreferences from './components/NotificationPreferences';
+// This file is a placeholder for the main page of the application.
+// It can be modified to include the main content or routing logic.
 
-const HomePage = () => {
-    return (
-        <div>
-            <h1>Welcome to the Notification System</h1>
-            <NotificationPreferences />
-        </div>
-    );
-};
-
-export default HomePage;
+export default function Page() {
+    return <h1>Welcome to the Real-Time Notification Management System</h1>;
+}

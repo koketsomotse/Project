@@ -46,6 +46,7 @@ class NotificationsAPITests(APITestCase):
     def test_create_notification(self):
         """Test creating a notification via API"""
         response = self.client.post('/api/notifications/', self.notification_data)
+        print(response.content)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(Notifications.objects.count(), 1)
 

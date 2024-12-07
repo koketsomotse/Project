@@ -32,11 +32,10 @@ class NotificationsViewSet(viewsets.ViewSet):
         Returns:
             Response with created notification or error details
         """
-        serializer = NotificationsSerializer(data=request.data)
+        data = request.data.copy()
+        data['recipient'] = request.user.id
+        serializer = NotificationsSerializer(data=data)
         if serializer.is_valid():
-            # Set the recipient as the current user
-            request.data['recipient'] = request.user.id
-            
             # Check if user has opted in for this notification type
             notification_type = serializer.validated_data['notification_type']
             preference_field = notification_type.lower()
