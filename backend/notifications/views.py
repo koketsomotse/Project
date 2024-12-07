@@ -13,32 +13,36 @@ from .serializers import NotificationsSerializer, UserPreferencesSerializer
 
 class NotificationsViewSet(viewsets.ViewSet):
     """
-    A simple ViewSet for managing notifications.
+    ViewSet for managing user notifications.
+    
+    Provides endpoints for creating, retrieving, and managing notifications.
+    All endpoints require user authentication.
     """
+    
     permission_classes = [IsAuthenticated]
 
     def create(self, request):
         """
-        Create a new notification.
+        Creates a new notification for a user.
         
-        Custom create method that checks user preferences before creating a notification.
+        - Validates the notification data
+        - Checks user preferences before creating
+        - Sends real-time update via WebSocket if created
         
-        Args:
-            request: The HTTP request
-            
         Returns:
-            Response: HTTP response with created notification data
+            Response with created notification or error details
         """
         serializer = NotificationsSerializer(data=request.data)
         if serializer.is_valid():
-            # Add the recipient
+            # Set the recipient as the current user
             request.data['recipient'] = request.user.id
             
-            # Check user preferences before creating notification
+            # Check if user has opted in for this notification type
             notification_type = serializer.validated_data['notification_type']
             preference_field = notification_type.lower()
             
             try:
+                # Get user preferences or create default ones
                 user_preference = UserPreferences.objects.get(user=request.user)
                 if not getattr(user_preference, preference_field, True):
                     return Response(
@@ -46,45 +50,83 @@ class NotificationsViewSet(viewsets.ViewSet):
                         status=status.HTTP_400_BAD_REQUEST
                     )
             except UserPreferences.DoesNotExist:
-                # If no preferences exist, create default preferences
                 UserPreferences.objects.create(user=request.user)
             
-            notification = serializer.save()
+            # Create the notification
+            notification = serializer.save(recipient=request.user)
             
-            # Send real-time notification
+            # Send real-time notification via WebSocket
             channel_layer = get_channel_layer()
             async_to_sync(channel_layer.group_send)(
-                f"user_{request.user.id}_notifications",
+                f'user_{request.user.id}_notifications',
                 {
-                    "type": "notification_message",
-                    "message": serializer.data
+                    'type': 'notification_message',
+                    'message': NotificationsSerializer(notification).data
                 }
             )
             
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                serializer.data,
+                status=status.HTTP_201_CREATED
+            )
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST
+        )
 
     def list(self, request):
         """
-        Get the list of notifications for the current user.
+        Retrieves all notifications for the current user.
         
-        Filters notifications to only show those belonging to the current user.
-        Orders by creation date, with newest first.
+        Returns:
+            Response containing a list of user's notifications
+        """
+        notifications = Notifications.objects.filter(recipient=request.user)
+        serializer = NotificationsSerializer(notifications, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, pk=None):
+        """
+        Retrieves a specific notification.
         
         Args:
-            request: The HTTP request
+            pk: Primary key of the notification to retrieve
             
         Returns:
-            Response: HTTP response with notification data
+            Response containing the requested notification
         """
-        user = request.user
-        notifications = Notifications.objects.filter(recipient=user)
-        return Response(NotificationsSerializer(notifications, many=True).data)
+        notification = get_object_or_404(
+            Notifications,
+            pk=pk,
+            recipient=request.user
+        )
+        serializer = NotificationsSerializer(notification)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def mark_as_read(self, request, pk=None):
+        """
+        Marks a specific notification as read.
+        
+        Args:
+            pk: Primary key of the notification to mark as read
+            
+        Returns:
+            Response indicating success or failure
+        """
+        notification = get_object_or_404(
+            Notifications,
+            pk=pk,
+            recipient=request.user
+        )
+        notification.read = True
+        notification.save()
+        return Response({'status': 'notification marked as read'})
 
     @action(detail=False, methods=['post'])
     def mark_all_read(self, request):
         """
-        Mark all notifications as read.
+        Marks all notifications as read.
         
         Custom action that allows marking all notifications as read.
         
@@ -98,43 +140,43 @@ class NotificationsViewSet(viewsets.ViewSet):
         notifications.update(read=True)
         return Response({'status': 'notifications marked as read'})
 
-    @action(detail=True, methods=['post'])
-    def mark_read(self, request, pk=None):
-        """
-        Mark a notification as read.
-        
-        Custom action that allows marking a specific notification as read.
-        
-        Args:
-            request: The HTTP request
-            pk: Primary key of the notification
-            
-        Returns:
-            Response: HTTP response with updated notification data
-        """
-        notification = get_object_or_404(Notifications, id=pk, recipient=request.user)
-        notification.read = True
-        notification.save()
-        return Response({'status': 'notification marked as read'})
-
 class UserPreferencesViewSet(viewsets.ViewSet):
     """
-    A simple ViewSet for managing user notification preferences.
+    ViewSet for managing user notification preferences.
+    
+    Provides endpoints for creating and retrieving user preferences
+    for different types of notifications.
     """
+    
+    permission_classes = [IsAuthenticated]
 
     def create(self, request):
-        serializer = UserPreferencesSerializer(data=request.data)
+        """
+        Creates or updates user notification preferences.
+        
+        Returns:
+            Response with created/updated preferences
+        """
+        try:
+            # Try to get existing preferences
+            preferences = UserPreferences.objects.get(user=request.user)
+            serializer = UserPreferencesSerializer(preferences, data=request.data)
+        except UserPreferences.DoesNotExist:
+            # Create new preferences if none exist
+            serializer = UserPreferencesSerializer(data=request.data)
+        
         if serializer.is_valid():
-            user_preferences, created = UserPreferences.objects.update_or_create(
-                user=request.user,
-                defaults=serializer.validated_data
-            )
-            return Response(UserPreferencesSerializer(user_preferences).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+            serializer.save(user=request.user)
+            return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def retrieve(self, request):
-        try:
-            user_preferences = UserPreferences.objects.get(user=request.user)
-            return Response(UserPreferencesSerializer(user_preferences).data)
-        except UserPreferences.DoesNotExist:
-            return Response({'detail': 'Preferences not found'}, status=status.HTTP_404_NOT_FOUND)
+        """
+        Retrieves the current user's notification preferences.
+        
+        Returns:
+            Response containing user's preference settings
+        """
+        preferences = get_object_or_404(UserPreferences, user=request.user)
+        serializer = UserPreferencesSerializer(preferences)
+        return Response(serializer.data)

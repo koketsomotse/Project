@@ -8,6 +8,11 @@ class NotificationType(models.TextChoices):
     Enumerates the different types of notifications that can be sent.
     
     Each notification type has a unique identifier and a human-readable name.
+    
+    Available types:
+    - TASK_UPDATED: When a task's details are modified
+    - TASK_ASSIGNED: When a task is assigned to a user
+    - TASK_COMPLETED: When a task is marked as complete
     """
     TASK_UPDATED = 'TASK_UPDATED', 'Task Updated'
     TASK_ASSIGNED = 'TASK_ASSIGNED', 'Task Assigned'
@@ -20,14 +25,17 @@ class Notifications(models.Model):
     This model stores all notifications sent to users, including their status and metadata.
     Each notification is associated with a specific recipient user.
     
-    Attributes:
-        recipient (ForeignKey): The User who will receive this notification
-        notification_type (str): Category/type of notification (e.g., 'TASK_UPDATED', 'TASK_ASSIGNED', 'TASK_COMPLETED')
-        title (str): Short heading/subject of the notification
-        message (str): Detailed content of the notification
-        read (bool): Indicates if the notification has been read by the recipient
-        created_at (datetime): Timestamp when notification was created
-        updated_at (datetime): Timestamp when notification was last updated
+    Relationships:
+        - One-to-Many with User model (recipient)
+    
+    Fields:
+        recipient: Links to the User who receives the notification
+        notification_type: The category of notification (from NotificationType)
+        title: Brief description of the notification
+        message: Detailed content of the notification
+        read: Tracks if the notification has been viewed
+        created_at: When the notification was created
+        updated_at: When the notification was last modified
     """
     recipient = models.ForeignKey(
         User,
@@ -38,18 +46,18 @@ class Notifications(models.Model):
     notification_type = models.CharField(
         max_length=50,
         choices=NotificationType.choices,
-        help_text="Category/type of notification (e.g., 'TASK_UPDATED', 'TASK_ASSIGNED', 'TASK_COMPLETED')"
+        help_text="Category of notification (e.g., 'TASK_UPDATED', 'TASK_ASSIGNED')"
     )
     title = models.CharField(
         max_length=255,
-        help_text="Short heading/subject of the notification"
+        help_text="Brief heading of the notification"
     )
     message = models.TextField(
-        help_text="Detailed content of the notification"
+        help_text="Full content of the notification"
     )
     read = models.BooleanField(
         default=False,
-        help_text="Indicates if the notification has been read by the recipient"
+        help_text="Indicates if the notification has been read"
     )
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -62,15 +70,17 @@ class Notifications(models.Model):
 
     class Meta:
         """
-        Meta configuration for Notifications model.
-        Ensures proper plural name in Django admin and sets default ordering.
+        Model metadata options
         """
-        ordering = ['-created_at']  # Most recent notifications first
         verbose_name_plural = 'notifications'
+        ordering = ['-created_at']  # Most recent notifications first
 
     def __str__(self):
-        """String representation of the notification"""
-        return f"{self.notification_type} - {self.title}"
+        """
+        String representation of the notification
+        Returns: A string containing the notification type and recipient
+        """
+        return f"{self.notification_type} for {self.recipient.username}"
 
 class UserPreferences(models.Model):
     """
@@ -79,11 +89,14 @@ class UserPreferences(models.Model):
     This model maintains each user's notification preferences, allowing them to
     customize how they receive different types of notifications.
     
-    Attributes:
-        user (OneToOneField): The User whose preferences these are
-        task_updated (bool): Whether user wants to receive notifications for task updates
-        task_assigned (bool): Whether user wants to receive notifications for task assignments
-        task_completed (bool): Whether user wants to receive notifications for task completions
+    Relationships:
+        - One-to-One with User model
+    
+    Fields:
+        user: The User whose preferences these are
+        task_updated: Preference for task update notifications
+        task_assigned: Preference for task assignment notifications
+        task_completed: Preference for task completion notifications
     """
     user = models.OneToOneField(
         User,
@@ -93,24 +106,23 @@ class UserPreferences(models.Model):
     )
     task_updated = models.BooleanField(
         default=True,
-        help_text="Whether user wants to receive notifications for task updates"
+        help_text="Whether to receive task update notifications"
     )
     task_assigned = models.BooleanField(
         default=True,
-        help_text="Whether user wants to receive notifications for task assignments"
+        help_text="Whether to receive task assignment notifications"
     )
     task_completed = models.BooleanField(
         default=True,
-        help_text="Whether user wants to receive notifications for task completions"
+        help_text="Whether to receive task completion notifications"
     )
 
     class Meta:
-        """
-        Meta configuration for UserPreferences model.
-        Ensures proper plural name in Django admin.
-        """
         verbose_name_plural = 'user preferences'
 
     def __str__(self):
-        """String representation of the user preferences"""
+        """
+        String representation of the user preferences
+        Returns: A string containing the username
+        """
         return f"Preferences for {self.user.username}"
