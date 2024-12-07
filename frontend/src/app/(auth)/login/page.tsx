@@ -1,19 +1,37 @@
+/**
+ * Login Page Component
+ * 
+ * Provides user authentication functionality with a form interface.
+ * Handles login submission, error states, and redirects after successful login.
+ * Also initializes WebSocket connection upon successful authentication.
+ */
 'use client'
 
 import { useState } from 'react'
-import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-
-import useWebSocket from '../../../hooks/useWebSocket';
+import { signIn } from 'next-auth/react'
+import { useWebSocket } from '../../../hooks/useWebSocket';
 const WEBSOCKET_URL = 'ws://localhost:8000/ws/notifications/';
 
+/**
+ * Login Page Component
+ * 
+ * Provides user authentication functionality with a form interface.
+ * Handles login submission, error states, and redirects after successful login.
+ * Also initializes WebSocket connection upon successful authentication.
+ */
 export default function LoginPage() {
-  const router = useRouter()
+  // State management for error and loading states
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  const router = useRouter()
   useWebSocket(WEBSOCKET_URL);
 
+  /**
+   * Handles form submission
+   * Attempts to authenticate user and establish WebSocket connection
+   */
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setLoading(true)
@@ -42,40 +60,46 @@ export default function LoginPage() {
             Sign in to your account
           </h2>
         </div>
+        
+        {/* Login Form */}
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="username" className="sr-only">
-                Username
-              </label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                placeholder="Username"
-              />
+          {error && (
+            <div className="text-red-500 text-sm text-center">
+              {error}
             </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
-              />
-            </div>
+          )}
+          
+          {/* Username Field */}
+          <div>
+            <label htmlFor="username" className="sr-only">
+              Username
+            </label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              required
+              className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+              placeholder="Username"
+            />
+          </div>
+          
+          {/* Password Field */}
+          <div>
+            <label htmlFor="password" className="sr-only">
+              Password
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              required
+              className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm"
+              placeholder="Password"
+            />
           </div>
 
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
-
+          {/* Submit Button */}
           <div>
             <button
               type="submit"
