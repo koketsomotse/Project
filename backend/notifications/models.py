@@ -3,20 +3,17 @@ from django.contrib.auth.models import User
 
 # Create your models here.
 
-class NotificationType(models.TextChoices):
-    """
-    Enumerates the different types of notifications that can be sent.
-    
-    Each notification type has a unique identifier and a human-readable name.
-    
-    Available types:
-    - TASK_UPDATED: When a task's details are modified
-    - TASK_ASSIGNED: When a task is assigned to a user
-    - TASK_COMPLETED: When a task is marked as complete
-    """
-    TASK_UPDATED = 'TASK_UPDATED', 'Task Updated'
-    TASK_ASSIGNED = 'TASK_ASSIGNED', 'Task Assigned'
-    TASK_COMPLETED = 'TASK_COMPLETED', 'Task Completed'
+class NotificationType(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    description = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        ordering = ['name']
 
 class Notifications(models.Model):
     """
@@ -43,10 +40,10 @@ class Notifications(models.Model):
         related_name='notifications',
         help_text="User who will receive this notification"
     )
-    notification_type = models.CharField(
-        max_length=50,
-        choices=NotificationType.choices,
-        help_text="Category of notification (e.g., 'TASK_UPDATED', 'TASK_ASSIGNED')"
+    notification_type = models.ForeignKey(
+        NotificationType,
+        on_delete=models.CASCADE,
+        help_text="Category of notification"
     )
     title = models.CharField(
         max_length=255,
@@ -80,7 +77,7 @@ class Notifications(models.Model):
         String representation of the notification
         Returns: A string containing the notification type and recipient
         """
-        return f"{self.notification_type} for {self.recipient.username}"
+        return f"{self.notification_type.name} for {self.recipient.username}"
 
 class UserPreferences(models.Model):
     """
