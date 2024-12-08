@@ -18,15 +18,35 @@ try:
     # Create a cursor
     cur = conn.cursor()
     
-    # Drop old tables
-    cur.execute("""
-        DROP TABLE IF EXISTS notifications_notification CASCADE;
-        DROP TABLE IF EXISTS notifications_notificationpreference CASCADE;
-    """)
+    # Drop all relevant tables
+    tables_to_drop = [
+        'notifications_notifications',
+        'notifications_notificationtype',
+        'notifications_userpreferences',
+        'django_migrations',
+        'auth_group_permissions',
+        'auth_user_groups',
+        'auth_user_user_permissions',
+        'auth_group',
+        'auth_permission',
+        'django_admin_log',
+        'django_content_type',
+        'auth_user',
+        'django_session',
+        'authtoken_token'
+    ]
+    
+    # Drop each table
+    for table in tables_to_drop:
+        try:
+            cur.execute(f'DROP TABLE IF EXISTS {table} CASCADE')
+            print(f"Dropped table {table}")
+        except Exception as e:
+            print(f"Error dropping {table}: {e}")
     
     # Commit the changes
     conn.commit()
-    print("Successfully dropped old tables!")
+    print("Successfully dropped all tables!")
     
     # Close cursor and connection
     cur.close()

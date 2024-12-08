@@ -1,32 +1,24 @@
 from channels.generic.websocket import AsyncWebsocketConsumer
 import json
 from django.db.models import Q
-from .models import UserPreferences
+from .models import Notifications, UserPreferences
+from .serializers import NotificationsSerializer
 from asgiref.sync import sync_to_async
+from django.core.paginator import Paginator
 
 class NotificationsConsumer(AsyncWebsocketConsumer):
     """
     WebSocket consumer for handling real-time notifications.
-    
-    This consumer manages WebSocket connections for each user,
-    allowing them to receive notifications in real-time based
-    on their preferences.
     """
-
+    
     async def connect(self):
         """
         Handles new WebSocket connections.
-        
-        - Authenticates the user
-        - Creates a unique group name for the user
-        - Adds the user to their notification group if authenticated
-        - Closes the connection if user is not authenticated
         """
         self.user = self.scope['user']
-        self.group_name = f'user_{self.user.id}_notifications'
+        self.group_name = f"user_{self.user.id}"
 
         if self.user.is_authenticated:
-            # Add user to their notification group
             await self.channel_layer.group_add(
                 self.group_name,
                 self.channel_name
@@ -37,57 +29,83 @@ class NotificationsConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         """
-        Handles WebSocket disconnection.
-        
-        Removes the user from their notification group when
-        they disconnect from the WebSocket.
-        
-        Args:
-            close_code: The code indicating why the connection was closed
+        Handles WebSocket disconnections.
         """
-        # Remove user from their notification group
-        await self.channel_layer.group_discard(
-            self.group_name,
-            self.channel_name
-        )
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(
+                self.group_name,
+                self.channel_name
+            )
 
-    async def receive(self, text_data):
+    async def receive_json(self, content):
         """
-        Handles incoming WebSocket messages.
-        
-        Currently not implemented as this is a one-way
-        notification system (server to client only).
-        
-        Args:
-            text_data: The message received from the client
+        Handle incoming WebSocket messages.
         """
-        pass
+        message_type = content.get('type')
+        
+        if message_type == 'fetch_notifications':
+            await self.fetch_notifications(content)
+        elif message_type == 'mark_read':
+            await self.mark_notifications_read(content)
+
+    @sync_to_async
+    def get_notifications(self, page=1):
+        """
+        Get paginated notifications for the current user.
+        """
+        notifications = Notifications.objects.filter(
+            recipient=self.user
+        ).order_by('-created_at')
+        
+        paginator = Paginator(notifications, 10)
+        page_obj = paginator.get_page(page)
+        
+        return {
+            'notifications': NotificationsSerializer(page_obj, many=True).data,
+            'has_next': page_obj.has_next(),
+            'total_pages': paginator.num_pages,
+            'total_count': paginator.count
+        }
+
+    async def fetch_notifications(self, content):
+        """
+        Fetch notifications for the current user.
+        """
+        page = content.get('page', 1)
+        notifications_data = await self.get_notifications(page)
+        
+        await self.send_json({
+            'type': 'notifications_list',
+            **notifications_data
+        })
 
     async def notification_message(self, event):
         """
-        Handles sending notifications to connected clients.
-        
-        Checks user preferences before sending any notification
-        to ensure users only receive notifications they've opted into.
-        
-        Args:
-            event: Dictionary containing the notification message and type
+        Handles incoming notification messages from other parts of the application.
         """
-        message = event['message']
-        notification_type = message['notification_type']
+        await self.send_json({
+            'type': 'notification',
+            'notification': event['notification']
+        })
 
-        # Check user preferences before sending
-        user_preferences = await sync_to_async(UserPreferences.objects.get)(user=self.user)
-        
-        # Only send notification if user has opted in for this type
-        if notification_type == 'TASK_UPDATED' and not user_preferences.task_updated:
-            return
-        elif notification_type == 'TASK_ASSIGNED' and not user_preferences.task_assigned:
-            return
-        elif notification_type == 'TASK_COMPLETED' and not user_preferences.task_completed:
-            return
+    @sync_to_async
+    def mark_as_read(self, notification_ids):
+        """
+        Mark notifications as read.
+        """
+        Notifications.objects.filter(
+            id__in=notification_ids,
+            recipient=self.user
+        ).update(is_read=True)
 
-        # Send notification to WebSocket
-        await self.send(text_data=json.dumps({
-            'message': message
-        }))
+    async def mark_notifications_read(self, content):
+        """
+        Handle marking notifications as read.
+        """
+        notification_ids = content.get('notification_ids', [])
+        if notification_ids:
+            await self.mark_as_read(notification_ids)
+            await self.send_json({
+                'type': 'notifications_marked_read',
+                'notification_ids': notification_ids
+            })

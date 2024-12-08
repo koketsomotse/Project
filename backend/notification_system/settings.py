@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',    # Static file management
     # Third party apps
     'rest_framework',               # Django REST framework for API
+    'rest_framework.authtoken',     # Token authentication
     'channels',                     # Channels for WebSocket support
     'corsheaders',                  # CORS headers for cross-origin requests
     # Local apps
@@ -141,6 +142,7 @@ CHANNEL_LAYERS = {
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
     ],

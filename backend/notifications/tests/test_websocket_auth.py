@@ -1,32 +1,94 @@
 import pytest
 from channels.testing import WebsocketCommunicator
 from channels.db import database_sync_to_async
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, AnonymousUser
 from rest_framework.authtoken.models import Token
 from notifications.consumers import NotificationsConsumer
 from notifications.models import Notifications, NotificationType
 from channels.middleware import BaseMiddleware
 from channels.auth import AuthMiddlewareStack
+from channels.layers import get_channel_layer
+from django.contrib.auth.models import AnonymousUser
 import json
+from urllib.parse import parse_qs
+
+# Configure the channel layer for testing
+from channels.layers import BaseChannelLayer
+class MemoryChannelLayer(BaseChannelLayer):
+    def __init__(self, expiry=60):
+        super().__init__(expiry)
+        self.channels = {}
+        self.groups = {}
+
+    async def send(self, channel, message):
+        if channel not in self.channels:
+            self.channels[channel] = []
+        self.channels[channel].append(message)
+
+    async def receive(self, channel):
+        if channel not in self.channels:
+            return None
+        if not self.channels[channel]:
+            return None
+        return self.channels[channel].pop(0)
+
+    async def group_add(self, group, channel):
+        if group not in self.groups:
+            self.groups[group] = set()
+        self.groups[group].add(channel)
+
+    async def group_discard(self, group, channel):
+        if group in self.groups:
+            self.groups[group].discard(channel)
+
+    async def group_send(self, group, message):
+        if group not in self.groups:
+            return
+        for channel in self.groups[group]:
+            await self.send(channel, message)
 
 class TokenAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
+        # Initialize the scope with AnonymousUser
+        scope['user'] = AnonymousUser()
+        
         try:
-            token_key = scope["query_string"].decode().split("=")[1]
-            token = await database_sync_to_async(Token.objects.get)(key=token_key)
-            scope["user"] = await database_sync_to_async(User.objects.get)(id=token.user_id)
-        except:
-            scope["user"] = None
+            # Extract token from query string
+            query_string = scope["query_string"].decode()
+            params = parse_qs(query_string)
+            token_key = params.get('token', [None])[0]
+            
+            if token_key:
+                # Get the token and user
+                token = await database_sync_to_async(Token.objects.get)(key=token_key)
+                user = await database_sync_to_async(User.objects.get)(id=token.user_id)
+                
+                # Set the user in the scope
+                scope['user'] = user
+        except Exception as e:
+            # Keep AnonymousUser on any error
+            pass
+        
         return await super().__call__(scope, receive, send)
+
+def TokenAuthMiddlewareStack(inner):
+    return TokenAuthMiddleware(AuthMiddlewareStack(inner))
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 class TestWebSocketAuthentication:
+    @pytest.fixture(autouse=True)
+    def setup_channel_layer(self):
+        """Set up the channel layer for testing"""
+        channel_layer = MemoryChannelLayer()
+        self.channel_layer = channel_layer
+        
     async def test_unauthenticated_connection(self):
         """Test that unauthenticated users cannot connect"""
-        application = AuthMiddlewareStack(NotificationsConsumer.as_asgi())
+        application = TokenAuthMiddlewareStack(NotificationsConsumer.as_asgi())
         communicator = WebsocketCommunicator(application, "ws/notifications/")
-        connected, _ = await communicator.connect()
+        communicator.scope["channel_layer"] = self.channel_layer
+        connected, _ = await communicator.connect(timeout=5)
         assert not connected
         await communicator.disconnect()
         
@@ -39,12 +101,13 @@ class TestWebSocketAuthentication:
     async def test_authenticated_connection(self):
         """Test that authenticated users can connect"""
         user, token = await self.create_user_and_token()
-        application = AuthMiddlewareStack(NotificationsConsumer.as_asgi())
+        application = TokenAuthMiddlewareStack(NotificationsConsumer.as_asgi())
         communicator = WebsocketCommunicator(
             application,
             f"ws/notifications/?token={token.key}"
         )
-        connected, _ = await communicator.connect()
+        communicator.scope["channel_layer"] = self.channel_layer
+        connected, _ = await communicator.connect(timeout=5)
         assert connected
         await communicator.disconnect()
         
@@ -52,7 +115,7 @@ class TestWebSocketAuthentication:
         """Test handling multiple concurrent connections"""
         user, token = await self.create_user_and_token()
         communicators = []
-        application = AuthMiddlewareStack(NotificationsConsumer.as_asgi())
+        application = TokenAuthMiddlewareStack(NotificationsConsumer.as_asgi())
         
         # Try to create 5 connections (reduced from 100 for testing)
         for _ in range(5):
@@ -60,7 +123,8 @@ class TestWebSocketAuthentication:
                 application,
                 f"ws/notifications/?token={token.key}"
             )
-            connected, _ = await communicator.connect()
+            communicator.scope["channel_layer"] = self.channel_layer
+            connected, _ = await communicator.connect(timeout=5)
             if connected:
                 communicators.append(communicator)
                 
@@ -94,12 +158,13 @@ class TestWebSocketAuthentication:
         user, token = await self.create_user_and_token()
         await self.create_bulk_notifications(user)
         
-        application = AuthMiddlewareStack(NotificationsConsumer.as_asgi())
+        application = TokenAuthMiddlewareStack(NotificationsConsumer.as_asgi())
         communicator = WebsocketCommunicator(
             application,
             f"ws/notifications/?token={token.key}"
         )
-        connected, _ = await communicator.connect()
+        communicator.scope["channel_layer"] = self.channel_layer
+        connected, _ = await communicator.connect(timeout=5)
         assert connected
         
         # Request notifications
@@ -117,26 +182,28 @@ class TestWebSocketAuthentication:
 
     async def test_invalid_token(self):
         """Test connection attempt with invalid token"""
-        application = AuthMiddlewareStack(NotificationsConsumer.as_asgi())
+        application = TokenAuthMiddlewareStack(NotificationsConsumer.as_asgi())
         communicator = WebsocketCommunicator(
             application,
             "ws/notifications/?token=invalid_token_123"
         )
-        connected, _ = await communicator.connect()
+        communicator.scope["channel_layer"] = self.channel_layer
+        connected, _ = await communicator.connect(timeout=5)
         assert not connected
         await communicator.disconnect()
 
     async def test_reconnection(self):
         """Test reconnection behavior after disconnect"""
         user, token = await self.create_user_and_token()
-        application = AuthMiddlewareStack(NotificationsConsumer.as_asgi())
+        application = TokenAuthMiddlewareStack(NotificationsConsumer.as_asgi())
         
         # First connection
         communicator1 = WebsocketCommunicator(
             application,
             f"ws/notifications/?token={token.key}"
         )
-        connected1, _ = await communicator1.connect()
+        communicator1.scope["channel_layer"] = self.channel_layer
+        connected1, _ = await communicator1.connect(timeout=5)
         assert connected1
         await communicator1.disconnect()
         
@@ -145,7 +212,8 @@ class TestWebSocketAuthentication:
             application,
             f"ws/notifications/?token={token.key}"
         )
-        connected2, _ = await communicator2.connect()
+        communicator2.scope["channel_layer"] = self.channel_layer
+        connected2, _ = await communicator2.connect(timeout=5)
         assert connected2
         await communicator2.disconnect()
 
@@ -153,7 +221,7 @@ class TestWebSocketAuthentication:
         """Test broadcasting messages to connected clients"""
         user1, token1 = await self.create_user_and_token()
         user2, token2 = await self.create_user_and_token()
-        application = AuthMiddlewareStack(NotificationsConsumer.as_asgi())
+        application = TokenAuthMiddlewareStack(NotificationsConsumer.as_asgi())
         
         # Connect two users
         communicator1 = WebsocketCommunicator(
@@ -165,8 +233,12 @@ class TestWebSocketAuthentication:
             f"ws/notifications/?token={token2.key}"
         )
         
-        await communicator1.connect()
-        await communicator2.connect()
+        communicator1.scope["channel_layer"] = self.channel_layer
+        communicator2.scope["channel_layer"] = self.channel_layer
+        
+        connected1, _ = await communicator1.connect(timeout=5)
+        connected2, _ = await communicator2.connect(timeout=5)
+        assert connected1 and connected2
         
         # Create and broadcast a notification
         notification_type = await database_sync_to_async(NotificationType.objects.create)(
@@ -198,12 +270,13 @@ class TestWebSocketAuthentication:
     async def test_malformed_message(self):
         """Test handling of malformed messages"""
         user, token = await self.create_user_and_token()
-        application = AuthMiddlewareStack(NotificationsConsumer.as_asgi())
+        application = TokenAuthMiddlewareStack(NotificationsConsumer.as_asgi())
         communicator = WebsocketCommunicator(
             application,
             f"ws/notifications/?token={token.key}"
         )
-        connected, _ = await communicator.connect()
+        communicator.scope["channel_layer"] = self.channel_layer
+        connected, _ = await communicator.connect(timeout=5)
         assert connected
         
         # Send malformed message

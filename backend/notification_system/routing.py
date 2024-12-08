@@ -1,6 +1,14 @@
 from django.urls import re_path
-from notifications.consumers import NotificationConsumer
+from notifications.consumers import NotificationsConsumer
+from notifications.middleware import TokenAuthMiddleware
+from channels.routing import ProtocolTypeRouter, URLRouter
 
-websocket_urlpatterns = [
-    re_path(r'ws/notifications/$', NotificationConsumer.as_asgi()),
-]
+application = ProtocolTypeRouter({
+    'websocket': TokenAuthMiddleware(
+        URLRouter(
+            [
+                re_path(r'ws/notifications/$', NotificationsConsumer.as_asgi()),
+            ]
+        )
+    ),
+})
