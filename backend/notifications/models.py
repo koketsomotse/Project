@@ -34,6 +34,12 @@ class Notifications(models.Model):
         created_at: When the notification was created
         updated_at: When the notification was last modified
     """
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('MEDIUM', 'Medium'),
+        ('HIGH', 'High'),
+    ]
+
     recipient = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -46,38 +52,40 @@ class Notifications(models.Model):
         help_text="Category of notification"
     )
     title = models.CharField(
-        max_length=255,
+        max_length=200,
         help_text="Brief heading of the notification"
     )
     message = models.TextField(
         help_text="Full content of the notification"
     )
-    read = models.BooleanField(
-        default=False,
-        help_text="Indicates if the notification has been read"
-    )
     created_at = models.DateTimeField(
         auto_now_add=True,
         help_text="Timestamp when notification was created"
     )
-    updated_at = models.DateTimeField(
-        auto_now=True,
-        help_text="Timestamp when notification was last updated"
+    read = models.BooleanField(
+        default=False,
+        help_text="Indicates if the notification has been read"
     )
+    priority = models.CharField(
+        max_length=10,
+        choices=PRIORITY_CHOICES,
+        default='MEDIUM',
+        help_text="Priority level of the notification"
+    )
+
+    def __str__(self):
+        """
+        String representation of the notification
+        Returns: A string containing the notification type and title
+        """
+        return f"{self.notification_type}: {self.title}"
 
     class Meta:
         """
         Model metadata options
         """
-        verbose_name_plural = 'notifications'
         ordering = ['-created_at']  # Most recent notifications first
-
-    def __str__(self):
-        """
-        String representation of the notification
-        Returns: A string containing the notification type and recipient
-        """
-        return f"{self.notification_type.name} for {self.recipient.username}"
+        verbose_name_plural = 'notifications'
 
 class UserPreferences(models.Model):
     """
@@ -101,21 +109,19 @@ class UserPreferences(models.Model):
         related_name='notification_preferences',
         help_text="User whose preferences these are"
     )
-    task_updated = models.BooleanField(
+    email_notifications = models.BooleanField(
         default=True,
-        help_text="Whether to receive task update notifications"
+        help_text="Whether to receive email notifications"
     )
-    task_assigned = models.BooleanField(
+    push_notifications = models.BooleanField(
         default=True,
-        help_text="Whether to receive task assignment notifications"
+        help_text="Whether to receive push notifications"
     )
-    task_completed = models.BooleanField(
-        default=True,
-        help_text="Whether to receive task completion notifications"
+    enabled_types = models.ManyToManyField(
+        NotificationType,
+        related_name='subscribed_users',
+        help_text="Notification types that the user has enabled"
     )
-
-    class Meta:
-        verbose_name_plural = 'user preferences'
 
     def __str__(self):
         """
@@ -123,3 +129,6 @@ class UserPreferences(models.Model):
         Returns: A string containing the username
         """
         return f"Preferences for {self.user.username}"
+
+    class Meta:
+        verbose_name_plural = 'user preferences'
