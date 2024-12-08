@@ -10,6 +10,14 @@ from .models import Notifications, UserPreferences, NotificationType
 from .serializers import NotificationsSerializer, UserPreferencesSerializer
 from django.utils.dateparse import parse_datetime
 from django.db.models import Q
+from django.core.cache import cache
+
+def get_user_notifications(user):
+    # Always fetch fresh data from the database
+    notifications = Notifications.objects.filter(recipient=user).order_by('-created_at')
+    # Cache the notifications for 5 minutes
+    cache.set(f'user_notifications_{user.id}', notifications, timeout=300)
+    return notifications
 
 class NotificationsViewSet(viewsets.ModelViewSet):
     """
@@ -22,7 +30,7 @@ class NotificationsViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']
 
     def get_queryset(self):
-        queryset = Notifications.objects.filter(recipient=self.request.user)
+        queryset = get_user_notifications(self.request.user)
         
         # Date range filtering
         start_date = self.request.query_params.get('start_date')
@@ -52,20 +60,37 @@ class NotificationsViewSet(viewsets.ModelViewSet):
         )
         notifications.update(is_read=True)
 
+        # Invalidate cache
+        cache.delete(f'user_notifications_{request.user.id}')
+
         return Response({'status': 'notifications marked as read'})
 
     def perform_create(self, serializer):
         notification = serializer.save(recipient=self.request.user)
-        
+        # Invalidate cache for the user
+        cache.delete(f'user_notifications_{notification.recipient.id}')
         # Send real-time notification via WebSocket
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            f"user_{self.request.user.id}",
+            f'user_notifications_{notification.recipient.id}',
             {
-                "type": "notification.message",
-                "notification": NotificationsSerializer(notification).data
+                'type': 'new_notification',
+                'notification': NotificationsSerializer(notification).data,
             }
         )
+        return notification
+
+    def perform_update(self, serializer):
+        notification = serializer.save()
+        # Invalidate cache for the user
+        cache.delete(f'user_notifications_{notification.recipient.id}')
+        return notification
+
+    def perform_destroy(self, instance):
+        recipient = instance.recipient
+        instance.delete()
+        # Invalidate cache for the user
+        cache.delete(f'user_notifications_{recipient.id}')
 
 class UserPreferencesViewSet(viewsets.ViewSet):
     """

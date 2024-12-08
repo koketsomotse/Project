@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',     # Token authentication
     'channels',                     # Channels for WebSocket support
     'corsheaders',                  # CORS headers for cross-origin requests
+    'django_redis',                 # Redis cache
     # Local apps
     'notifications',                # Our notifications app
     'accounts',                     # Our accounts app
@@ -136,6 +137,17 @@ CHANNEL_LAYERS = {
         # 'CONFIG': {
         #     "hosts": [('127.0.0.1', 6379)],
         # },
+    }
+}
+
+# Redis cache configuration
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',  # Update with your Redis server details
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
     }
 }
 
